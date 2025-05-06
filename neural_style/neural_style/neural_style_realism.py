@@ -20,7 +20,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print("Dispostivo de renderización utilizado: ",device)
 
 # desired size of the output image
-imsize = 512 if torch.cuda.is_available() else 128  # use small size if no gpu
+imsize = 512  # use small size if no gpu
 
 loader = transforms.Compose([
     transforms.Resize((imsize,imsize)),  # scale imported image
@@ -40,8 +40,8 @@ def save_image(tensor,path_to_save):
     image = unloader(image)
     image.save(path_to_save)
 
-content_img = image_loader("images/turtle.jpg")
-style_img = image_loader("images/wave.jpg")
+content_img = image_loader("images/dataset_realistic/input/in10.png")
+style_img = image_loader("images/dataset_realistic/style/tar35.png")
 #original_img = torch.randn(content_img.data.size(), device=device, requires_grad=True)
 original_img = content_img.clone().requires_grad_(True)
 
@@ -64,11 +64,32 @@ class VGG(nn.Module):
 
 model = VGG().to(device).eval()
 
+
+
+def calcular_termino_regularizacion(output_img):
+    """
+    Calcula el término de regularización basado en la expresión matemática proporcionada.
+    
+    output_img: Imagen de salida que se va a regularizar.
+    MI: Matriz de regularización que depende de la imagen de entrada.
+    
+    Retorna el valor del término de regularización.
+    """
+    regularization_loss = 0
+    # Vectorizar la imagen de salida para cada canal
+    for c in range(3):  # Asumiendo que la imagen tiene tres canales (RGB)
+        Vc_O = output_img[:, c, :, :].view(-1, 1)  # Vectorizar el canal c
+        # Calcular el producto matricial y sumar al término de regularización
+        regularization_loss += torch.sum(Vc_O ** 2)
+    return regularization_loss
+
 ## Hiperparametros
 total_steps = 6000
 alpha = 1
-beta = 1000000 
-show_every = 300
+beta = 1/100
+gamma = 10000
+tradeoff = 100 
+show_every = 100
 results_dir = 'results/photo_realistic/'
 
 optimiced = optim.Adam([original_img])
@@ -76,7 +97,8 @@ optimiced = optim.Adam([original_img])
 for step in range(total_steps):
     def closure():   
         # correct the values of updated input image
-        original_img.data.clamp_(0, 1) 
+        with torch.no_grad():
+            original_img.clamp_(0, 1)
         
         optimiced.zero_grad()
         generated_features = model(original_img)
@@ -88,7 +110,7 @@ for step in range(total_steps):
             generated_features,content_features,style_features
         ):
             batch_size,channel,height,width = gen_feature.shape
-            content_loss += torch.mean((gen_feature-cont_feature)**2)
+            content_loss += alpha * torch.mean((gen_feature-cont_feature)**2)
 
             G = gen_feature.view(channel,height*width).mm(
                 gen_feature.view(channel,height*width).t()
@@ -96,18 +118,18 @@ for step in range(total_steps):
             A = style_feature.view(channel,height*width).mm(
                 style_feature.view(channel,height*width).t()
             )
-            style_loss += torch.mean((G-A)**2)
+            style_loss += beta * torch.mean((G-A)**2)
 
-        
+        reg_loss = calcular_termino_regularizacion(original_img)
+         
         # Añadir el término de regularización a la pérdida total
-        total_loss = alpha * content_loss + beta * style_loss
-        optimiced.zero_grad()
+        total_loss = content_loss + tradeoff * style_loss + gamma * reg_loss
         total_loss.backward()
         
         if step % show_every == 0:
             save_image(original_img,os.path.join(results_dir,'generated-{}.png'.format(step)))
         
-        return alpha*content_loss + beta*style_loss
+        return alpha*content_loss + beta*style_loss + gamma*reg_loss
     print("Step: ",step) 
     optimiced.step(closure)
     
