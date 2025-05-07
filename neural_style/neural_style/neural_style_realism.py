@@ -40,8 +40,8 @@ def save_image(tensor,path_to_save):
     image = unloader(image)
     image.save(path_to_save)
 
-content_img = image_loader("images/dataset_realistic/input/in10.png")
-style_img = image_loader("images/dataset_realistic/style/tar35.png")
+content_img = image_loader("images/dancing.jpg")
+style_img = image_loader("images/pillars_by_creation.jpg")
 #original_img = torch.randn(content_img.data.size(), device=device, requires_grad=True)
 original_img = content_img.clone().requires_grad_(True)
 
@@ -86,10 +86,10 @@ def calcular_termino_regularizacion(output_img):
 ## Hiperparametros
 total_steps = 6000
 alpha = 1
-beta = 1/100
+beta = 1000
 gamma = 10000
 tradeoff = 100 
-show_every = 100
+show_every = 300
 results_dir = 'results/photo_realistic/'
 
 optimiced = optim.Adam([original_img])
@@ -129,7 +129,7 @@ for step in range(total_steps):
         if step % show_every == 0:
             save_image(original_img,os.path.join(results_dir,'generated-{}.png'.format(step)))
         
-        return alpha*content_loss + beta*style_loss + gamma*reg_loss
+        return content_loss + tradeoff * style_loss + gamma * reg_loss
     print("Step: ",step) 
     optimiced.step(closure)
     
